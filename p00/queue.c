@@ -114,9 +114,7 @@ queue_t *queue_remove (queue_t **queue, queue_t *elem) {
 }
 
 void queue_print (char *name, queue_t *queue, void print_elem (void*)) {
-    int i = 0;
     queue_t *aux;
-    aux = queue;
 
     printf("%s: [", name);
     if (queue != NULL) {
@@ -124,14 +122,12 @@ void queue_print (char *name, queue_t *queue, void print_elem (void*)) {
         do {
             print_elem(aux);
             aux = aux->next;
-            i++;
 
-            if(aux != queue)
+            if(aux != queue) {
                 printf(" ");
+            }
+
         } while(aux != queue);
     }
     printf("]\n");
 }
-
-//========================================================================================
-
