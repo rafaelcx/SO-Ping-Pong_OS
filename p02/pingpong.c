@@ -4,7 +4,7 @@
 #include "pingpong.h"
 
 #define STACK_SIZE 30000
-#define DEBUG
+// #define DEBUG
 
 int task_identifier = 0;
 
