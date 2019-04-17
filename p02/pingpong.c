@@ -4,19 +4,51 @@
 #include "pingpong.h"
 
 #define STACK_SIZE 30000
-// #define DEBUG
+#define DEBUG
 
 int task_identifier = 0;
 
 task_t main_task;
 task_t *current_task;
 
+//================================================================================
+// Auxiliary functions
+//================================================================================
+
+void printBootMessage() {
+	#ifdef DEBUG
+        printf ("Booting operational system - Starting main task with TID: %d ", task_identifier);
+    #endif
+}
+
+void printTaskCreatedMessage(int task_tid) {
+	#ifdef DEBUG
+        printf ("Successfully created new task with TID: %d ", task_tid);
+    #endif
+}
+
+void printTaskExitingMessage(int current_task_tid) {
+	#ifdef DEBUG
+        printf ("Gracefully exiting current task with TID: %d ", current_task_tid);
+    #endif
+}
+
+void printTryingToSwapContextsMessage(int task_to_be_swapped_tid, int current_task_tid) {
+	#ifdef DEBUG
+        printf ("Trying to swap context from task with TID: %d to task with TID with TID: %d ", task_to_be_swapped_tid, current_task_tid);
+    #endif
+}
+
+void printContextSwappedMessage() {
+	#ifdef DEBUG
+        printf ("Successfully swapped contexts! ");
+    #endif
+}
+
 /*===================================================================================*/
 
 void pingpong_init() {
-    #ifdef DEBUG
-        printf ("Booting operational system - Starting main task with TID: %d ", task_identifier);
-    #endif
+    printBootMessage();
 
     main_task.tid = task_identifier;
     current_task = &main_task;
@@ -42,9 +74,7 @@ int task_create(task_t *task, void (*start_func)(void *), void *arg) {
 
     makecontext(&task->context, (void*)(*start_func), 1, arg);
 
-    #ifdef DEBUG
-        printf ("Successfully created new task with TID: %d ", task->tid);
-    #endif
+    printTaskCreatedMessage(task->tid);
 
     return task->tid;
 }
@@ -52,9 +82,7 @@ int task_create(task_t *task, void (*start_func)(void *), void *arg) {
 void task_exit (int exitCode) {
     task_switch(&main_task);
 
-    #ifdef DEBUG
-        printf ("Gracefully exiting current task with TID: %d ", current_task->tid);
-    #endif
+    printTaskExitingMessage(current_task->tid);
 }
 
 int task_switch (task_t *task) {
@@ -63,15 +91,11 @@ int task_switch (task_t *task) {
     task_to_be_swapped = current_task;
     current_task = task;
 
-    #ifdef DEBUG
-        printf ("Trying to swap context from task with TID: %d to task with TID with TID: %d ", task_to_be_swapped->tid, current_task->tid);
-    #endif
+    printTryingToSwapContextsMessage(task_to_be_swapped->tid, current_task->tid);
 
     swapcontext(&task_to_be_swapped->context, &current_task->context);
 
-    #ifdef DEBUG
-        printf ("Successfully swapped contexts! ");
-    #endif
+    printContextSwappedMessage();
 
     return 0;
 }
