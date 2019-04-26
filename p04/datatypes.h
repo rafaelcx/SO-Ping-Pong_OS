@@ -11,12 +11,15 @@
 
 // Estrutura que define uma tarefa
 typedef struct task_t {
-	struct task_t *prev;
-	struct task_t *next;
+  struct task_t *prev;
+  struct task_t *next;
 
     struct queue_t *queue;
 
-	int tid;
+  int tid;
+  int static_prio;
+  int dynamic_prio;
+
     ucontext_t context;
 } task_t;
 

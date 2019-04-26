@@ -49,14 +49,55 @@ void printContextSwappedMessage() {
     #endif
 }
 
+void printSettingPriorityOutsideOfAcceptableBoundsMessage() {
+    #ifdef DEBUG
+        printf("Trying to set task priority outside of acceptable UNIX bounds, setting to default instead.");
+    #endif
+}
 
 //================================================================================
 // Auxiliary functions
 //================================================================================
 
 task_t* scheduler() {
-    // Implemented using FCFS style
-    return (task_t*)ready_queue;
+    queue_t* ready_queue_iterator;
+    task_t* next_task = (task_t*)ready_queue;
+
+    //Policy
+    if (ready_queue != NULL) {
+        ready_queue_iterator = ready_queue;
+        do {
+            task_t* task = (task_t*)ready_queue_iterator; // Type cast to be able to manipulate element as a task
+
+            if (task->dynamic_prio < next_task->dynamic_prio) {
+                next_task = task;
+            }
+
+            if (task->dynamic_prio == next_task->dynamic_prio && task->tid != next_task->tid) {
+                if (task->tid < next_task->tid) {
+                    next_task = task;
+                }
+            }
+
+            ready_queue_iterator = ready_queue_iterator->next;
+        } while (ready_queue_iterator != ready_queue);
+
+        //Task aging
+        ready_queue_iterator = ready_queue;
+        do {
+            task_t* task = (task_t*)ready_queue_iterator; // Type cast to be able to manipulate element as a task
+            if (task->tid != next_task->tid) {
+                task->dynamic_prio--;
+            }
+            ready_queue_iterator = ready_queue_iterator->next;
+        } while (ready_queue_iterator != ready_queue);
+
+        next_task->dynamic_prio = next_task->static_prio;
+
+        return next_task;
+    }
+
+    return NULL;
 }
 
 void dispacherBody(void *arg) {
@@ -70,6 +111,14 @@ void dispacherBody(void *arg) {
         }
     }
     task_exit(0);
+}
+
+int isPriorityBetweenAcceptableBounds(int prio) {
+    if (prio >= -20 && prio <= 20) {
+        return 1;
+    }
+    printSettingPriorityOutsideOfAcceptableBoundsMessage();
+    return 0;
 }
 
 
@@ -109,6 +158,9 @@ int task_create(task_t *task, void (*start_func)(void *), void *arg) {
         queue_append(&ready_queue, (queue_t*)task);
         task->queue = (queue_t*)&ready_queue;
     }
+
+    task->static_prio = 0;
+    task->dynamic_prio = 0;
 
     printTaskCreatedMessage(task->tid);
 
@@ -165,6 +217,27 @@ void task_resume(task_t *task) {
     }
     queue_append(&ready_queue, (queue_t*)task);
     task->queue = ready_queue;
+}
+
+void task_setprio(task_t *task, int prio) {
+    if (isPriorityBetweenAcceptableBounds(prio) == 1) {
+        if (task != NULL) {
+            task->static_prio = prio;
+            task->dynamic_prio = prio;
+        }
+        current_task->static_prio = prio;
+        current_task->dynamic_prio = prio;
+    } else {
+        task->static_prio = 0;
+        task->dynamic_prio = 0;
+    }
+}
+
+int task_getprio(task_t *task) {
+    if (task != NULL) {
+            return task->static_prio;
+    }
+    return current_task->static_prio;
 }
 
 int task_id () {
