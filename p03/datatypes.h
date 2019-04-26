@@ -11,10 +11,14 @@
 
 // Estrutura que define uma tarefa
 typedef struct task_t {
-	struct task_t *prev, *next;
+	struct task_t *prev;
+	struct task_t *next;
+
+    struct queue_t *queue;
+
 	int tid;
-	ucontext_t context;
-} task_t ;
+    ucontext_t context;
+} task_t;
 
 // estrutura que define um semáforo
 typedef struct
