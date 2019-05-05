@@ -19,6 +19,8 @@ typedef struct task_t {
   int tid;
   int static_prio;
   int dynamic_prio;
+  
+  char task_type;
 
     ucontext_t context;
 } task_t;

@@ -6,6 +6,9 @@
 
 #define STACK_SIZE 30000
 
+#define TYPE_SYSTEM_TASK 's'
+#define TYPE_KERNEL_TASK 'k'
+
 int task_identifier = 0;
 
 task_t main_task;
@@ -21,37 +24,43 @@ queue_t *suspended_queue;
 
 void printBootMessage() {
     #ifdef DEBUG
-        printf ("Booting operational system - Starting main task with TID: %d ", task_identifier);
+        printf ("Booting operational system - Starting main task with TID: %d \n", task_identifier);
     #endif
 }
 
 void printTaskCreatedMessage(int task_tid) {
     #ifdef DEBUG
-        printf ("Successfully created new task with TID: %d ", task_tid);
+        printf ("Successfully created new task with TID: %d \n", task_tid);
     #endif
 }
 
 void printTaskExitingMessage(int current_task_tid) {
     #ifdef DEBUG
-        printf ("Gracefully exiting current task with TID: %d ", current_task_tid);
+        printf ("Gracefully exiting current task with TID: %d \n", current_task_tid);
     #endif
 }
 
 void printTryingToSwapContextsMessage(int task_to_be_swapped_tid, int current_task_tid) {
     #ifdef DEBUG
-        printf ("Trying to swap context from task with TID: %d to task with TID with TID: %d ", task_to_be_swapped_tid, current_task_tid);
+        printf ("Trying to swap context from task with TID: %d to task with TID with TID: %d \n", task_to_be_swapped_tid, current_task_tid);
     #endif
 }
 
 void printContextSwappedMessage() {
     #ifdef DEBUG
-        printf ("Successfully swapped contexts! ");
+        printf ("Successfully swapped contexts! \n");
     #endif
 }
 
 void printSettingPriorityOutsideOfAcceptableBoundsMessage() {
     #ifdef DEBUG
-        printf("Trying to set task priority outside of acceptable UNIX bounds, setting to default instead.");
+        printf("Trying to set task priority outside of acceptable UNIX bounds, setting to default instead. \n");
+    #endif
+}
+
+void printDefinedTaskTypeMessage(task_t* task) {
+    #ifdef DEBUG_NOW
+        printf("Task with TID: %d type has been defined to: %c \n", task->tid, task->task_type);
     #endif
 }
 
@@ -63,8 +72,9 @@ task_t* scheduler() {
     queue_t* ready_queue_iterator;
     task_t* next_task = (task_t*)ready_queue;
 
-    //Policy
     if (ready_queue != NULL) {
+
+        // Priority policy
         ready_queue_iterator = ready_queue;
         do {
             task_t* task = (task_t*)ready_queue_iterator; // Type cast to be able to manipulate element as a task
@@ -78,7 +88,6 @@ task_t* scheduler() {
                     next_task = task;
                 }
             }
-
             ready_queue_iterator = ready_queue_iterator->next;
         } while (ready_queue_iterator != ready_queue);
 
@@ -121,15 +130,28 @@ int isPriorityBetweenAcceptableBounds(int prio) {
     return 0;
 }
 
+void define_task_type(task_t* task) {
+    if (task == &dispatcher_task) {
+        task->task_type = TYPE_KERNEL_TASK;
+    } else {
+        task->task_type = TYPE_SYSTEM_TASK;
+    }
+
+    printDefinedTaskTypeMessage(task);
+}
+
 
 /*===================================================================================*/
 
 void pingpong_init() {
     printBootMessage();
 
+    // Creating main task
     main_task.tid = task_identifier;
+    main_task.task_type = TYPE_SYSTEM_TASK;
     current_task = &main_task;
 
+    // Creating dispatcher task
     task_create(&dispatcher_task, &dispacherBody, NULL);
 
     setvbuf(stdout, 0, _IONBF, 0);
@@ -161,6 +183,8 @@ int task_create(task_t *task, void (*start_func)(void *), void *arg) {
 
     task->static_prio = 0;
     task->dynamic_prio = 0;
+
+    define_task_type(task);
 
     printTaskCreatedMessage(task->tid);
 
