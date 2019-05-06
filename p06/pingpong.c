@@ -13,8 +13,12 @@
 
 #define QUANTUM_SIZE_IN_TICKS 20
 
+#define DEBUG_P06
+
 int task_identifier = 0;
 int remaining_ticks = QUANTUM_SIZE_IN_TICKS;
+
+unsigned int system_time;
 
 task_t main_task;
 task_t *current_task;
@@ -78,6 +82,12 @@ void printEndOfQuantumMessage() {
     #endif
 }
 
+void printTaskTimeCosumingStatistics(task_t* task) {
+    #ifdef DEBUG_P06
+        printf("Task %d exit: execution time %d ms, processor time %d ms, %d activations \n", task->tid, task->execution_time, task->processor_time, task->activations);
+    #endif
+}
+
 //================================================================================
 // Auxiliary functions
 //================================================================================
@@ -108,6 +118,8 @@ void resetRemainingTicksQuantity() {
 }
 
 void systemClockTickHandler() {
+    system_time++; // Incremeting system clock
+
     if(current_task->task_type != TYPE_KERNEL_TASK) {
         remaining_ticks--;
 
@@ -193,7 +205,8 @@ void pingpong_init() {
     main_task.task_type = TYPE_SYSTEM_TASK;
     current_task = &main_task;
 
-    //
+    system_time = 0; // Initializing system clock
+
     action.sa_handler = systemClockTickHandler;
     sigemptyset(&action.sa_mask);
     action.sa_flags = 0;
@@ -210,10 +223,7 @@ void pingpong_init() {
         exit(1);
     }
 
-    // Creating dispatcher task
-    task_create(&dispatcher_task, &dispacherBody, NULL);
-
-
+    task_create(&dispatcher_task, &dispacherBody, NULL); // Creating dispatcher task
 
     setvbuf(stdout, 0, _IONBF, 0);
 }
@@ -244,6 +254,12 @@ int task_create(task_t *task, void (*start_func)(void *), void *arg) {
 
     task->static_prio = 0;
     task->dynamic_prio = 0;
+
+    task->creation_time = systime();
+    task->activations = 0;
+    task->execution_time = 0;
+    task->processor_time = 0;
+
     defineTaskType(task);
 
     printTaskCreatedMessage(task->tid);
@@ -252,25 +268,29 @@ int task_create(task_t *task, void (*start_func)(void *), void *arg) {
 }
 
 void task_exit (int exitCode) {
+    printTaskExitingMessage(current_task->tid);
+
+    current_task->execution_time = systime() - current_task->creation_time;
+    printTaskTimeCosumingStatistics(current_task);
+
     if (current_task->tid == 1) {
         task_switch(&main_task);
     } else {
         task_switch(&dispatcher_task);
     }
-
-    //Free alocated memory from task
-
-    printTaskExitingMessage(current_task->tid);
 }
 
 int task_switch (task_t *task) {
-    task_t *task_to_be_swapped;
-
-    task_to_be_swapped = current_task;
+    task_t *task_to_be_swapped = current_task;
     current_task = task;
 
     printTryingToSwapContextsMessage(task_to_be_swapped->tid, current_task->tid);
+
+    task->activations++;
+    task->last_activation_time = systime();
+    task_to_be_swapped->processor_time += systime() - task_to_be_swapped->last_activation_time;
     swapcontext(&task_to_be_swapped->context, &current_task->context);
+
     printContextSwappedMessage();
 
     return 0;
@@ -324,4 +344,8 @@ int task_getprio(task_t *task) {
 
 int task_id () {
     return current_task->tid;
+}
+
+unsigned int systime () {
+    return system_time;
 }

@@ -19,7 +19,13 @@ typedef struct task_t {
   int tid;
   int static_prio;
   int dynamic_prio;
-  
+
+  int activations;
+  unsigned int creation_time;
+  unsigned int last_activation_time;
+  unsigned int execution_time;
+  unsigned int processor_time;
+
   char task_type;
 
     ucontext_t context;
