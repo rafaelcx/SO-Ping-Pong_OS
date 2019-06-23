@@ -120,7 +120,7 @@ void resetRemainingTicksQuantity() {
 void systemClockTickHandler() {
     system_time++; // Incremeting system clock
 
-    if(current_task->task_type != TYPE_KERNEL_TASK) {
+    if(current_task != &dispatcher_task) {
         remaining_ticks--;
 
         if(remaining_ticks == 0) {
@@ -194,38 +194,69 @@ void dispacherBody(void *arg) {
 }
 
 //===================================================================================
-// Project functions
+// Timer functions
 //===================================================================================
 
-void pingpong_init() {
-    printBootMessage();
-
-    // Creating main task
-    main_task.tid = task_identifier;
-    main_task.task_type = TYPE_SYSTEM_TASK;
-    current_task = &main_task;
-
-    system_time = 0; // Initializing system clock
-
+void registerTimerSignal() {
     action.sa_handler = systemClockTickHandler;
     sigemptyset(&action.sa_mask);
     action.sa_flags = 0;
+
     if(sigaction(SIGALRM, &action, 0) < 0) {
         perror("Sigaction error: ");
         exit(1);
     }
+}
+
+void setTimerValues() {
     timer.it_value.tv_usec = 1000;
     timer.it_value.tv_sec = 0;
     timer.it_interval.tv_usec = 1000;
     timer.it_interval.tv_sec = 0;
+}
+
+void setTimer() {
     if(setitimer(ITIMER_REAL, &timer, 0) < 0) {
         perror("Setitimer error: ");
         exit(1);
     }
+}
 
-    task_create(&dispatcher_task, &dispacherBody, NULL); // Creating dispatcher task
+void buildTimer() {
+    registerTimerSignal();
+    setTimerValues();
+    setTimer();
+}
 
+//===================================================================================
+// Project functions
+//===================================================================================
+
+void pingpong_init() {
     setvbuf(stdout, 0, _IONBF, 0);
+    printBootMessage();
+
+    // Creating main task
+    main_task.tid = task_identifier;
+    main_task.creation_time = systime();
+    main_task.activations = 0;
+    main_task.execution_time = 0;
+    main_task.processor_time = 0;
+    main_task.task_type = TYPE_SYSTEM_TASK;
+    current_task = &main_task;
+    main_task.queue = (queue_t*)&ready_queue;
+
+    // Initializing system clock
+    system_time = 0;
+    buildTimer();
+
+    // Creating dispatcher task
+    task_create(&dispatcher_task, &dispacherBody, NULL);
+
+    // Preemption related stuff
+    buildTimer();
+
+    task_yield();
 }
 
 int task_create(task_t *task, void (*start_func)(void *), void *arg) {
@@ -297,9 +328,8 @@ int task_switch (task_t *task) {
 }
 
 void task_yield() {
-    if (current_task->tid != 0) {
-        queue_append(&ready_queue, (queue_t*)current_task);
-    }
+    queue_append(&ready_queue, (queue_t*)current_task);
+    current_task->queue = ready_queue;
     task_switch(&dispatcher_task);
 }
 
