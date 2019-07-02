@@ -11,6 +11,11 @@
 #define TYPE_SYSTEM_TASK 's'
 #define TYPE_KERNEL_TASK 'k'
 
+#define TASK_STATUS_EXECUTING 'e'
+#define TASK_STATUS_READY 'r'
+#define TASK_STATUS_SUSPENDED 's'
+#define TASK_STATUS_EXITED 'x'
+
 #define QUANTUM_SIZE_IN_TICKS 20
 
 #define DEBUG_P06
@@ -88,6 +93,18 @@ void printTaskTimeCosumingStatistics(task_t* task) {
     #endif
 }
 
+void printUnsuccessfullJoinMessage() {
+    #ifdef DEBUG
+        printf("Error while trying to execute join operation, task gived does not exists\n");
+    #endif
+}
+
+void printSuccessfullJoinMessage(int task_tid) {
+    #ifdef DEBUG
+        printf("Successfully joined current task with task -> %d \n", task_tid);
+    #endif
+}
+
 //================================================================================
 // Auxiliary functions
 //================================================================================
@@ -150,12 +167,15 @@ task_t* scheduler() {
                 next_task = task;
             }
 
+            // Removing the custom tie breaker between tasks with same dynamic priority
+
             // if (task->dynamic_prio == next_task->dynamic_prio && task->tid != next_task->tid) {
             //     printf("uguas\n");
             //     if (task->tid < next_task->tid) {
             //         next_task = task;
             //     }
             // }
+
             ready_queue_iterator = ready_queue_iterator->next;
         } while (ready_queue_iterator != ready_queue);
 
@@ -187,9 +207,9 @@ void dispacherBody(void *arg) {
         task_t* next_task = scheduler();
 
         if (next_task) {
-            queue_remove((queue_t**)&ready_queue, (queue_t*)next_task);
             next_task->queue = NULL;
-            next_task->task_state = 'e';
+            next_task->task_state = TASK_STATUS_EXECUTING;
+            queue_remove(&ready_queue, (queue_t*)next_task);
             task_switch(next_task);
         }
     }
@@ -285,6 +305,7 @@ int task_create(task_t *task, void (*start_func)(void *), void *arg) {
     if (task->tid > 1) {
         queue_append(&ready_queue, (queue_t*)task);
         task->queue = ready_queue;
+        task->task_state = TASK_STATUS_READY;
     }
 
     task->static_prio = 0;
@@ -295,7 +316,6 @@ int task_create(task_t *task, void (*start_func)(void *), void *arg) {
     task->execution_time = 0;
     task->processor_time = 0;
     task->dependents_queue = NULL;
-
     defineTaskType(task);
 
     printTaskCreatedMessage(task->tid);
@@ -306,13 +326,13 @@ int task_create(task_t *task, void (*start_func)(void *), void *arg) {
 void task_exit (int exitCode) {
     printTaskExitingMessage(current_task->tid);
 
-    current_task->task_state = 'x';
+    current_task->task_state = TASK_STATUS_EXITED;
     current_task->exit_code = exitCode;
 
+    // Resuming all tasks that were joined with this current exiting task
     while(current_task->dependents_queue) {
         task_resume(current_task->dependents_queue);
     }
-
 
     current_task->execution_time = systime() - current_task->creation_time;
     printTaskTimeCosumingStatistics(current_task);
@@ -333,6 +353,7 @@ int task_switch (task_t *task) {
     task->activations++;
     task->last_activation_time = systime();
     task_to_be_swapped->processor_time += systime() - task_to_be_swapped->last_activation_time;
+    
     swapcontext(&task_to_be_swapped->context, &current_task->context);
 
     printContextSwappedMessage();
@@ -341,10 +362,10 @@ int task_switch (task_t *task) {
 }
 
 void task_yield() {
-    if (current_task->task_state != 's') {
+    if (current_task->task_state != TASK_STATUS_SUSPENDED) {
         queue_append((queue_t**)&ready_queue, (queue_t*)current_task);
         current_task->queue = ready_queue;
-        current_task->task_state = 'r';
+        current_task->task_state = TASK_STATUS_READY;
     }
 
     task_switch(&dispatcher_task);
@@ -362,26 +383,31 @@ void task_suspend(task_t *task, task_t **queue) {
         queue_append((queue_t**)queue, (queue_t*)task);
         task->queue = (queue_t*)queue;
     }
-    task->task_state = 's';
+
+    task->task_state = TASK_STATUS_SUSPENDED;
 }
 
 void task_resume(task_t *task) {
     if (task->queue != NULL) {
         queue_remove((queue_t**)(task->queue), (queue_t*)task);
     }
+
     queue_append(&ready_queue, (queue_t*)task);
     task->queue = ready_queue;
-    task->task_state = 'r';
+    task->task_state = TASK_STATUS_READY;
 }
 
 int task_join(task_t* task) {
-    if (task == NULL || task->task_state == 'x') {
+    if (task == NULL || task->task_state == TASK_STATUS_EXITED) {
+        printUnsuccessfullJoinMessage();
         return -1;
     }
 
     setitimer(ITIMER_REAL, &stop_timer, NULL);
     task_suspend(NULL, &(task->dependents_queue));
     setitimer(ITIMER_REAL, &timer, NULL);
+
+    printSuccessfullJoinMessage(task->tid);
 
     task_yield();
     return(task->exit_code);
