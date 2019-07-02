@@ -14,7 +14,8 @@ typedef struct task_t {
   struct task_t *prev;
   struct task_t *next;
 
-    struct queue_t *queue;
+  struct queue_t *queue;
+  struct task_t *dependents_queue;
 
   int tid;
   int static_prio;
@@ -26,7 +27,10 @@ typedef struct task_t {
   unsigned int execution_time;
   unsigned int processor_time;
 
+  int exit_code;
+
   char task_type;
+  char task_state;
 
     ucontext_t context;
 } task_t;

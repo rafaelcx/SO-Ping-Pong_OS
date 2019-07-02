@@ -58,24 +58,42 @@ int queue_size(queue_t *queue) {
     return size;
 }
 
-void queue_append(queue_t **queue, queue_t *elem) {
-    if (queue_exists(queue)) {
-        if (element_exists(elem)) {
-            if (element_does_not_belong_to_another_queue(elem)) {
-                if (is_empty_queue(queue)) {
-                    elem->next = elem;
-                    elem->prev = elem;
-                    *queue = elem;
-                } else {
-                    elem->prev = (*queue)->prev;
-                    elem->next = *queue;
-
-                    (*queue)->prev->next = elem;
-                    (*queue)->prev = elem;
-                }
-            }
-        }
+void queue_append(queue_t** queue, queue_t* elem) {
+    if (queue == NULL) {
+#ifdef DEBUG
+        printf("Erro queue_append: A fila nao existe.\n");
+#endif
+        return;
     }
+
+    if (elem == NULL) {
+#ifdef DEBUG
+        printf("Erro queue_append: O elemento nao existe.\n");
+#endif
+        return;
+    }
+
+    if (elem->next != NULL || elem->prev != NULL) {
+#ifdef DEBUG
+        printf("Erro queue_append: O elemento ja esta em uma fila.\n");
+#endif
+        return;
+    }
+
+    if (*queue == NULL) {
+        *queue = elem;
+        elem->next = elem;
+        elem->prev = elem;
+        return;
+    }
+
+    
+    elem->prev = (*queue)->prev; 
+    elem->next = (*queue);       
+    (*queue)->prev->next = elem;
+    (*queue)->prev = elem;
+
+    return;
 }
 
 queue_t *queue_remove (queue_t **queue, queue_t *elem) {

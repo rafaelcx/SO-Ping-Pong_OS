@@ -25,10 +25,10 @@ task_t *current_task;
 task_t dispatcher_task;
 
 queue_t *ready_queue;
-queue_t *suspended_queue;
 
 struct sigaction action;
 struct itimerval timer;
+struct itimerval stop_timer = {0};
 
 //================================================================================
 // Debug functions
@@ -123,7 +123,7 @@ void systemClockTickHandler() {
     if(current_task != &dispatcher_task) {
         remaining_ticks--;
 
-        if(remaining_ticks == 0) {
+        if(remaining_ticks <= 0) {
             printEndOfQuantumMessage();
             resetRemainingTicksQuantity();
             task_yield();
@@ -150,11 +150,12 @@ task_t* scheduler() {
                 next_task = task;
             }
 
-            if (task->dynamic_prio == next_task->dynamic_prio && task->tid != next_task->tid) {
-                if (task->tid < next_task->tid) {
-                    next_task = task;
-                }
-            }
+            // if (task->dynamic_prio == next_task->dynamic_prio && task->tid != next_task->tid) {
+            //     printf("uguas\n");
+            //     if (task->tid < next_task->tid) {
+            //         next_task = task;
+            //     }
+            // }
             ready_queue_iterator = ready_queue_iterator->next;
         } while (ready_queue_iterator != ready_queue);
 
@@ -186,7 +187,9 @@ void dispacherBody(void *arg) {
         task_t* next_task = scheduler();
 
         if (next_task) {
-            queue_remove(&ready_queue, (queue_t*)next_task);
+            queue_remove((queue_t**)&ready_queue, (queue_t*)next_task);
+            next_task->queue = NULL;
+            next_task->task_state = 'e';
             task_switch(next_task);
         }
     }
@@ -243,8 +246,9 @@ void pingpong_init() {
     main_task.execution_time = 0;
     main_task.processor_time = 0;
     main_task.task_type = TYPE_SYSTEM_TASK;
-    current_task = &main_task;
     main_task.queue = (queue_t*)&ready_queue;
+    main_task.dependents_queue = NULL;
+    current_task = &main_task;
 
     // Initializing system clock
     system_time = 0;
@@ -280,7 +284,7 @@ int task_create(task_t *task, void (*start_func)(void *), void *arg) {
     // Append on ready_queue all tasks that are not main_task or dispatcher_task
     if (task->tid > 1) {
         queue_append(&ready_queue, (queue_t*)task);
-        task->queue = (queue_t*)&ready_queue;
+        task->queue = ready_queue;
     }
 
     task->static_prio = 0;
@@ -290,6 +294,7 @@ int task_create(task_t *task, void (*start_func)(void *), void *arg) {
     task->activations = 0;
     task->execution_time = 0;
     task->processor_time = 0;
+    task->dependents_queue = NULL;
 
     defineTaskType(task);
 
@@ -300,6 +305,14 @@ int task_create(task_t *task, void (*start_func)(void *), void *arg) {
 
 void task_exit (int exitCode) {
     printTaskExitingMessage(current_task->tid);
+
+    current_task->task_state = 'x';
+    current_task->exit_code = exitCode;
+
+    while(current_task->dependents_queue) {
+        task_resume(current_task->dependents_queue);
+    }
+
 
     current_task->execution_time = systime() - current_task->creation_time;
     printTaskTimeCosumingStatistics(current_task);
@@ -312,7 +325,7 @@ void task_exit (int exitCode) {
 }
 
 int task_switch (task_t *task) {
-    task_t *task_to_be_swapped = current_task;
+    task_t* task_to_be_swapped = current_task;
     current_task = task;
 
     printTryingToSwapContextsMessage(task_to_be_swapped->tid, current_task->tid);
@@ -328,27 +341,50 @@ int task_switch (task_t *task) {
 }
 
 void task_yield() {
-    queue_append(&ready_queue, (queue_t*)current_task);
-    current_task->queue = ready_queue;
+    if (current_task->task_state != 's') {
+        queue_append((queue_t**)&ready_queue, (queue_t*)current_task);
+        current_task->queue = ready_queue;
+        current_task->task_state = 'r';
+    }
+
     task_switch(&dispatcher_task);
 }
 
 void task_suspend(task_t *task, task_t **queue) {
-    if (queue != NULL) {
-        queue_t* removed_element = queue_remove((queue_t**)&queue, (queue_t*)task);
-        queue_append((queue_t**)&queue, removed_element);
-        task->queue = (queue_t*)&queue;
-    } else {
+    if (task == NULL) {
         task = current_task;
     }
+
+    if (queue != NULL) {
+        if (task->queue != NULL) {
+            queue_remove((queue_t**)(task->queue), (queue_t*)task);
+        }
+        queue_append((queue_t**)queue, (queue_t*)task);
+        task->queue = (queue_t*)queue;
+    }
+    task->task_state = 's';
 }
 
 void task_resume(task_t *task) {
     if (task->queue != NULL) {
-        queue_remove(&task->queue, (queue_t*)task);
+        queue_remove((queue_t**)(task->queue), (queue_t*)task);
     }
     queue_append(&ready_queue, (queue_t*)task);
     task->queue = ready_queue;
+    task->task_state = 'r';
+}
+
+int task_join(task_t* task) {
+    if (task == NULL || task->task_state == 'x') {
+        return -1;
+    }
+
+    setitimer(ITIMER_REAL, &stop_timer, NULL);
+    task_suspend(NULL, &(task->dependents_queue));
+    setitimer(ITIMER_REAL, &timer, NULL);
+
+    task_yield();
+    return(task->exit_code);
 }
 
 void task_setprio(task_t *task, int prio) {
