@@ -103,7 +103,19 @@ void printUnsuccessfullJoinMessage() {
 
 void printSuccessfullJoinMessage(int task_tid) {
     #ifdef DEBUG
-        printf("Successfully joined current task with task -> %d \n", task_tid);
+        printf("Successfully joined current task with TID -> %d \n", task_tid);
+    #endif
+}
+
+void printSuccessfullTaskResumeMessage(int task_tid) {
+    #ifdef DEBUG
+        printf("Successfully resumed task with TID -> %d \n", task_tid);
+    #endif
+}
+
+void printSuccessfullTaskSleepMessage(int task_tid) {
+    #ifdef DEBUG
+        printf("Successfully putted to sleep task with TID -> %d \n", task_tid);
     #endif
 }
 
@@ -169,8 +181,7 @@ task_t* scheduler() {
                 next_task = task;
             }
 
-            // Removing the custom tie breaker between tasks with same dynamic priority
-
+            // Tie breaker logic
             if (task->dynamic_prio == next_task->dynamic_prio && task->tid != next_task->tid) {
                 if (task->tid < next_task->tid) {
                     next_task = task;
@@ -413,6 +424,8 @@ void task_resume(task_t *task) {
     queue_append(&ready_queue, (queue_t*)task);
     task->queue = ready_queue;
     task->task_state = TASK_STATUS_READY;
+
+    printSuccessfullTaskResumeMessage(task->tid);
 }
 
 int task_join(task_t* task) {
@@ -438,6 +451,8 @@ void task_sleep (int t) {
         setitimer(ITIMER_REAL, &stop_timer, NULL);
         task_suspend(NULL, (task_t**)&sleeping_queue);
         setitimer(ITIMER_REAL, &timer, NULL);
+
+        printSuccessfullTaskSleepMessage(current_task->tid);
 
         task_yield();
     }
