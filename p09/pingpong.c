@@ -15,6 +15,7 @@
 #define TASK_STATUS_READY 'r'
 #define TASK_STATUS_SUSPENDED 's'
 #define TASK_STATUS_EXITED 'x'
+#define TASK_STATUS_SLEEPING 'd'
 
 #define QUANTUM_SIZE_IN_TICKS 20
 
@@ -26,10 +27,11 @@ int remaining_ticks = QUANTUM_SIZE_IN_TICKS;
 unsigned int system_time;
 
 task_t main_task;
-task_t *current_task;
+task_t* current_task;
 task_t dispatcher_task;
 
-queue_t *ready_queue;
+queue_t* ready_queue;
+queue_t* sleeping_queue; 
 
 struct sigaction action;
 struct itimerval timer;
@@ -169,12 +171,11 @@ task_t* scheduler() {
 
             // Removing the custom tie breaker between tasks with same dynamic priority
 
-            // if (task->dynamic_prio == next_task->dynamic_prio && task->tid != next_task->tid) {
-            //     printf("uguas\n");
-            //     if (task->tid < next_task->tid) {
-            //         next_task = task;
-            //     }
-            // }
+            if (task->dynamic_prio == next_task->dynamic_prio && task->tid != next_task->tid) {
+                if (task->tid < next_task->tid) {
+                    next_task = task;
+                }
+            }
 
             ready_queue_iterator = ready_queue_iterator->next;
         } while (ready_queue_iterator != ready_queue);
@@ -202,16 +203,31 @@ task_t* scheduler() {
 //===================================================================================
 
 void dispacherBody(void *arg) {
-    while (queue_size(ready_queue) > 0) {
-
-        task_t* next_task = scheduler();
-
-        if (next_task) {
-            next_task->queue = NULL;
-            next_task->task_state = TASK_STATUS_EXECUTING;
-            queue_remove(&ready_queue, (queue_t*)next_task);
-            task_switch(next_task);
+    while (ready_queue != NULL || sleeping_queue != NULL) {
+        if (ready_queue) {
+            task_t* next_task = scheduler();
+            if (next_task) {
+                remaining_ticks = 10;
+                next_task->queue = NULL;
+                next_task->task_state = TASK_STATUS_EXECUTING;
+                queue_remove(&ready_queue, (queue_t*)next_task);
+                task_switch(next_task);
+            }
         }
+
+        // Searching sleeping queue to wake tasks if necessary
+        if (sleeping_queue) {
+            queue_t* iterator = sleeping_queue;
+            do { 
+                task_t* element = (task_t*)iterator;
+                if (element->waking_time <= systime()) {
+                    iterator = iterator->next;
+                    task_resume(element);
+                } else {
+                    iterator = iterator->next;
+                }
+            } while (iterator != sleeping_queue && sleeping_queue != NULL);
+        }         
     }
     task_exit(0);
 }
@@ -268,6 +284,7 @@ void pingpong_init() {
     main_task.task_type = TYPE_SYSTEM_TASK;
     main_task.queue = (queue_t*)&ready_queue;
     main_task.dependents_queue = NULL;
+    main_task.waking_time = 0;
     current_task = &main_task;
 
     // Initializing system clock
@@ -316,6 +333,7 @@ int task_create(task_t *task, void (*start_func)(void *), void *arg) {
     task->execution_time = 0;
     task->processor_time = 0;
     task->dependents_queue = NULL;
+    task->waking_time = 0;
     defineTaskType(task);
 
     printTaskCreatedMessage(task->tid);
@@ -411,6 +429,18 @@ int task_join(task_t* task) {
 
     task_yield();
     return(task->exit_code);
+}
+
+void task_sleep (int t) {
+    if (t > 0) {
+        current_task->waking_time = systime() + t * 1000;
+
+        setitimer(ITIMER_REAL, &stop_timer, NULL);
+        task_suspend(NULL, (task_t**)&sleeping_queue);
+        setitimer(ITIMER_REAL, &timer, NULL);
+
+        task_yield();
+    }
 }
 
 void task_setprio(task_t *task, int prio) {

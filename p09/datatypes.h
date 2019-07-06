@@ -29,6 +29,8 @@ typedef struct task_t {
 
   int exit_code;
 
+  unsigned int waking_time;
+
   char task_type;
   char task_state;
 
