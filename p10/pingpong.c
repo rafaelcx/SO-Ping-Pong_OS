@@ -31,11 +31,13 @@ task_t* current_task;
 task_t dispatcher_task;
 
 queue_t* ready_queue;
-queue_t* sleeping_queue; 
+queue_t* sleeping_queue;
+
+long tasks_total_number;
 
 struct sigaction action;
 struct itimerval timer;
-struct itimerval stop_timer = {0};
+int preemption_active;
 
 //================================================================================
 // Debug functions
@@ -154,7 +156,7 @@ void systemClockTickHandler() {
     if(current_task != &dispatcher_task) {
         remaining_ticks--;
 
-        if(remaining_ticks <= 0) {
+        if(preemption_active == 1 && remaining_ticks <= 0) {
             printEndOfQuantumMessage();
             resetRemainingTicksQuantity();
             task_yield();
@@ -214,11 +216,13 @@ task_t* scheduler() {
 //===================================================================================
 
 void dispacherBody(void *arg) {
-    while (ready_queue != NULL || sleeping_queue != NULL) {
+    while (tasks_total_number > 0) {
         if (ready_queue) {
+            // printf("Ready queue size = %d\n", queue_size(ready_queue));
             task_t* next_task = scheduler();
             if (next_task) {
-                remaining_ticks = 10;
+                // printf("NExt task tid  = %d\n", next_task->tid );
+                resetRemainingTicksQuantity();
                 next_task->queue = NULL;
                 next_task->task_state = TASK_STATUS_EXECUTING;
                 queue_remove(&ready_queue, (queue_t*)next_task);
@@ -228,6 +232,7 @@ void dispacherBody(void *arg) {
 
         // Searching sleeping queue to wake tasks if necessary
         if (sleeping_queue) {
+            // printf("Sleeping queue size = %d\n", queue_size(sleeping_queue));
             queue_t* iterator = sleeping_queue;
             do { 
                 task_t* element = (task_t*)iterator;
@@ -286,6 +291,8 @@ void pingpong_init() {
     setvbuf(stdout, 0, _IONBF, 0);
     printBootMessage();
 
+    tasks_total_number = 0;
+
     // Creating main task
     main_task.tid = task_identifier;
     main_task.creation_time = systime();
@@ -304,6 +311,9 @@ void pingpong_init() {
 
     // Creating dispatcher task
     task_create(&dispatcher_task, &dispacherBody, NULL);
+
+    // Activating preemption
+    preemption_active = 1;
 
     // Preemption related stuff
     buildTimer();
@@ -347,6 +357,8 @@ int task_create(task_t *task, void (*start_func)(void *), void *arg) {
     task->waking_time = 0;
     defineTaskType(task);
 
+    tasks_total_number++;
+
     printTaskCreatedMessage(task->tid);
 
     return task->tid;
@@ -365,6 +377,8 @@ void task_exit (int exitCode) {
 
     current_task->execution_time = systime() - current_task->creation_time;
     printTaskTimeCosumingStatistics(current_task);
+
+    tasks_total_number--;
 
     if (current_task->tid == 1) {
         task_switch(&main_task);
@@ -434,9 +448,9 @@ int task_join(task_t* task) {
         return -1;
     }
 
-    setitimer(ITIMER_REAL, &stop_timer, NULL);
+    preemption_active = 0;
     task_suspend(NULL, &(task->dependents_queue));
-    setitimer(ITIMER_REAL, &timer, NULL);
+    preemption_active = 1;
 
     printSuccessfullJoinMessage(task->tid);
 
@@ -448,9 +462,9 @@ void task_sleep (int t) {
     if (t > 0) {
         current_task->waking_time = systime() + t * 1000;
 
-        setitimer(ITIMER_REAL, &stop_timer, NULL);
+        preemption_active = 0;
         task_suspend(NULL, (task_t**)&sleeping_queue);
-        setitimer(ITIMER_REAL, &timer, NULL);
+        preemption_active = 1;
 
         printSuccessfullTaskSleepMessage(current_task->tid);
 
@@ -485,4 +499,86 @@ int task_id () {
 
 unsigned int systime () {
     return system_time;
+}
+
+
+int sem_create(semaphore_t* s, int value) {
+    if (s == NULL) {
+        return -1;
+    }
+    
+    preemption_active = 0;
+    s->queue = NULL;
+    s->value = value;
+    s->active = 1;
+
+    preemption_active = 1;
+
+    if(remaining_ticks <= 0) {
+        task_yield();
+    }
+
+    return 0;
+}
+
+int sem_down(semaphore_t* s) {
+    if (s == NULL || !(s->active)) {
+        return -1;
+    }
+
+    preemption_active = 0;
+    s->value--;
+
+    if (s->value < 0) {
+
+        task_suspend(current_task, &(s->queue));
+
+        preemption_active = 1;
+        task_yield();
+    }
+
+    preemption_active = 1;
+
+    if(remaining_ticks <= 0) {
+        task_yield();
+    }
+    return 0;
+}
+
+int sem_up(semaphore_t* s) {
+    if (s == NULL || !(s->active)) {
+        return -1;
+    }
+    
+    preemption_active = 0;
+    s->value++;
+    if (s->value <= 0) {
+        task_resume(s->queue);
+    }
+    preemption_active = 1;
+
+    if(remaining_ticks <= 0) {
+        task_yield();
+    }
+
+    return 0;
+}
+
+int sem_destroy(semaphore_t* s) {
+    if (s == NULL || !(s->active)) {
+        return -1;
+    }
+    
+    preemption_active = 0;
+    s->active = 0;
+    while (s->queue != NULL) {
+        task_resume(s->queue);
+    }
+    preemption_active = 1;
+
+    if(remaining_ticks <= 0) {
+        task_yield();
+    }
+
+    return 0;
 }
