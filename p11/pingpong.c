@@ -121,6 +121,30 @@ void printSuccessfullTaskSleepMessage(int task_tid) {
     #endif
 }
 
+void printfSuccessfullyCreatedBarrierMessage() {
+    #ifdef DEBUG
+        printf("Successfully created the barrier");
+    #endif
+}
+
+void printfReleasingTasksRetainedOnTheBarrierMessage() {
+    #ifdef DEBUG
+        printf("Releasing all tasks that were retained in the barrias as it's capacity has been reached");
+    #endif
+}
+
+void printfRetainingTaskOnTheBarrierMessage(int task_tid) {
+    #ifdef DEBUG
+        printf("Retaining task with TID: %d on the barrier", task_id);
+    #endif
+}
+
+void printfSuccessfullyDestroyedBarrierMessage() {
+    #ifdef DEBUG
+        printf("Successfully destroyed barrier");
+    #endif
+}
+
 //================================================================================
 // Auxiliary functions
 //================================================================================
@@ -376,7 +400,7 @@ void task_exit (int exitCode) {
     }
 
     current_task->execution_time = systime() - current_task->creation_time;
-    printTaskTimeCosumingStatistics(current_task);
+    // printTaskTimeCosumingStatistics(current_task);
 
     tasks_total_number--;
 
@@ -501,6 +525,7 @@ unsigned int systime () {
     return system_time;
 }
 
+//=============================================================
 
 int sem_create(semaphore_t* s, int value) {
     if (s == NULL) {
@@ -580,5 +605,75 @@ int sem_destroy(semaphore_t* s) {
         task_yield();
     }
 
+    return 0;
+}
+
+//=============================================================
+
+int barrier_create(barrier_t* b, int N) {
+    if (b == NULL) {
+        return -1;
+    }
+
+    preemption_active = 0;
+    b->hold_capacity = N;
+    b->tasks_retained = 0;
+    b->active = 1;
+    preemption_active = 1;
+
+    printfSuccessfullyCreatedBarrierMessage();
+
+    if(remaining_ticks <= 0) {
+        task_yield();
+    }
+    return 0;
+}
+
+int barrier_join(barrier_t* b) {
+    if (b == NULL || b->active == 0) {
+        return -1;
+    }
+
+    preemption_active = 0;
+    b->tasks_retained++;
+    if (b->tasks_retained >= b->hold_capacity) {
+        printfReleasingTasksRetainedOnTheBarrierMessage();
+        while (b->queue != NULL) {
+            task_resume(b->queue);
+        }
+    
+        b->tasks_retained = 0;
+        preemption_active = 1;
+        if(remaining_ticks <= 0) {
+            task_yield();
+        }
+        return 0;
+    }
+
+    printfRetainingTaskOnTheBarrierMessage(current_task->tid);
+    task_suspend(current_task, &b->queue);
+    preemption_active = 1;
+    task_yield();
+
+    return 0;
+}
+
+int barrier_destroy(barrier_t* b) {
+    if (b == NULL || b->active == 0) {
+        return -1;
+    }
+
+    preemption_active = 0;
+    b->active = 0;
+    while (b->queue != NULL) {
+        task_resume(b->queue);
+    }
+    preemption_active = 1;
+
+    printfSuccessfullyDestroyedBarrierMessage();
+
+    if(remaining_ticks <= 0) {
+            task_yield();
+    }
     return 0;
 }

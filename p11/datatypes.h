@@ -42,8 +42,8 @@ typedef struct
 {
   struct task_t* queue;
   int value;
-
   unsigned char active;
+
 } semaphore_t ;
 
 // estrutura que define um mutex
@@ -55,7 +55,12 @@ typedef struct
 // estrutura que define uma barreira
 typedef struct
 {
-  // preencher quando necessário
+  int hold_capacity;
+  int tasks_retained;
+  int active;
+
+  struct task_t* queue;
+
 } barrier_t ;
 
 // estrutura que define uma fila de mensagens
