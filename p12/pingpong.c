@@ -4,6 +4,7 @@
 #include "pingpong.h"
 #include "queue.h"
 #include <signal.h>
+#include <string.h>
 #include <sys/time.h>
 
 #define STACK_SIZE 30000
@@ -242,10 +243,8 @@ task_t* scheduler() {
 void dispacherBody(void *arg) {
     while (tasks_total_number > 0) {
         if (ready_queue) {
-            // printf("Ready queue size = %d\n", queue_size(ready_queue));
             task_t* next_task = scheduler();
             if (next_task) {
-                // printf("NExt task tid  = %d\n", next_task->tid );
                 resetRemainingTicksQuantity();
                 next_task->queue = NULL;
                 next_task->task_state = TASK_STATUS_EXECUTING;
@@ -256,7 +255,6 @@ void dispacherBody(void *arg) {
 
         // Searching sleeping queue to wake tasks if necessary
         if (sleeping_queue) {
-            // printf("Sleeping queue size = %d\n", queue_size(sleeping_queue));
             queue_t* iterator = sleeping_queue;
             do { 
                 task_t* element = (task_t*)iterator;
@@ -400,7 +398,7 @@ void task_exit (int exitCode) {
     }
 
     current_task->execution_time = systime() - current_task->creation_time;
-    // printTaskTimeCosumingStatistics(current_task);
+    printTaskTimeCosumingStatistics(current_task);
 
     tasks_total_number--;
 
@@ -676,4 +674,104 @@ int barrier_destroy(barrier_t* b) {
             task_yield();
     }
     return 0;
+}
+
+//=============================================================
+
+int mqueue_create(mqueue_t* queue, int max, int size) {
+    if(queue != NULL) {
+        preemption_active = 0;
+        queue->data = malloc(max * size);
+        queue->message_size_limit = size;
+        queue->stored_messages_number_limit = max;
+        queue->stored_messages_number = 0;
+        queue->is_active = 1;
+        
+        sem_create(&(queue->buffer), 1);
+        sem_create(&(queue->item), 0);
+        sem_create(&(queue->spot), max);
+        
+        preemption_active = 1;
+
+        if(remaining_ticks <= 0) {
+            task_yield();
+        }
+        return 0;
+    }
+    return -1;
+}
+
+int mqueue_send(mqueue_t* queue, void* msg) {
+    if (queue != NULL && queue->is_active) {
+        if (sem_down(&queue->spot) == -1){
+            return -1;  
+        }
+
+        if (sem_down(&queue->buffer) == -1){
+            return -1;
+        }
+
+        memcpy(queue->data + queue->stored_messages_number * queue->message_size_limit, msg, queue->message_size_limit);
+        queue->stored_messages_number++;
+
+        sem_up(&queue->buffer);
+        sem_up(&queue->item);
+
+        return 0;
+    }
+    return -1;
+}
+
+int mqueue_recv(mqueue_t* queue, void* msg) {
+    int i;
+    void* destination;
+    void* origin;
+
+    if (queue != NULL && queue->is_active) {
+        if (sem_down(&queue->item) == -1){
+            return -1;
+        }
+        if (sem_down(&queue->buffer) == -1){
+            return -1;
+        }
+
+        queue->stored_messages_number--;
+        memcpy(msg, queue->data, queue->message_size_limit);
+
+        origin = queue->data + queue->message_size_limit;
+        destination = queue->data;
+
+        for (i = 0; i < queue->stored_messages_number; i++) {
+            memcpy(destination, origin, queue->message_size_limit);
+            origin += queue->message_size_limit;
+            destination += queue->message_size_limit;
+        }
+        
+        sem_up(&queue->buffer);
+        sem_up(&queue->spot);
+        
+        return 0;
+    }
+    return -1;
+}
+
+int mqueue_destroy(mqueue_t* queue) {
+    if (queue != NULL && queue->is_active) {
+        queue->is_active = 0;
+        free(queue->data);
+
+        sem_destroy(&(queue->buffer));
+        sem_destroy(&(queue->item));
+        sem_destroy(&(queue->spot));
+    
+        return 0;    
+    }
+    return -1;
+}
+
+int mqueue_msgs(mqueue_t* queue) {
+    if (queue == NULL && queue->is_active) {
+        return queue->stored_messages_number;
+    }
+    return -1;
 }

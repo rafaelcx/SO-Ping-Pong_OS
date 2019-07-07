@@ -64,9 +64,17 @@ typedef struct
 } barrier_t ;
 
 // estrutura que define uma fila de mensagens
-typedef struct
-{
-  // preencher quando necessário
+typedef struct {
+    int is_active;
+    int message_size_limit;
+    int stored_messages_number_limit;
+    int stored_messages_number;
+    
+    void* data;
+
+    semaphore_t buffer;
+    semaphore_t item;
+    semaphore_t spot;
 } mqueue_t ;
 
 #endif
